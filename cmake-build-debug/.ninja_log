@@ -1,0 +1,13 @@
+# ninja log v6
+3	6854	7528532053245417	CMakeFiles/Blelloch.dir/main.cu.obj	9f4f13a2d5645817
+6857	9548	7528532121784956	CMakeFiles/Blelloch.dir/cmake_device_link.obj	2003c954505aa1dc
+9548	10020	7528532148700310	Blelloch.exe	40a6c249086ddd34
+7	8134	7528532394680759	CMakeFiles/Blelloch.dir/main.cu.obj	9f4f13a2d5645817
+8135	10788	7528532475945724	CMakeFiles/Blelloch.dir/cmake_device_link.obj	2003c954505aa1dc
+10788	11087	7528532502486393	Blelloch.exe	40a6c249086ddd34
+8	7471	7528533400743998	CMakeFiles/Blelloch.dir/main.cu.obj	9f4f13a2d5645817
+7472	10075	7528533475388429	CMakeFiles/Blelloch.dir/cmake_device_link.obj	2003c954505aa1dc
+10076	10279	7528533501425102	Blelloch.exe	40a6c249086ddd34
+4	8009	7528533633228724	CMakeFiles/Blelloch.dir/main.cu.obj	9f4f13a2d5645817
+8010	10816	7528533713278927	CMakeFiles/Blelloch.dir/cmake_device_link.obj	2003c954505aa1dc
+10816	11175	7528533741324395	Blelloch.exe	40a6c249086ddd34
