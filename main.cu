@@ -1,75 +1,86 @@
-#include <iostream>
-#include <cuda.h>
-#include <cuda_runtime.h>
+#include <bit>
 #include <chrono>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include <cuda_runtime.h>
 
 __global__ void up_sweep(int* array, int n, int passo) {
-    int idx = (blockIdx.x * blockDim.x + threadIdx.x) * passo * 2;
-    if (idx + passo < n) {
-        array[idx + passo * 2 - 1] += array[idx + passo - 1];
+    unsigned par = blockIdx.x * blockDim.x + threadIdx.x;
+    if (par < static_cast<unsigned>(n / (2 * passo))) {
+        int direita = (par + 1) * 2 * passo - 1;
+        array[direita] += array[direita - passo];
     }
 }
 
 __global__ void down_sweep(int* array, int n, int passo) {
-    int idx = (blockIdx.x * blockDim.x + threadIdx.x) * passo * 2;
-    if (idx + passo < n) {
-        int temp = array[idx + passo - 1];
-        array[idx + passo - 1] = array[idx + passo * 2 - 1];
-        array[idx + passo * 2 - 1] += temp;
+    unsigned par = blockIdx.x * blockDim.x + threadIdx.x;
+    if (par < static_cast<unsigned>(n / (2 * passo))) {
+        int direita = (par + 1) * 2 * passo - 1;
+        int temp = array[direita - passo];
+        array[direita - passo] = array[direita];
+        array[direita] += temp;
+    }
+}
+
+void verificarCuda(cudaError_t status, const char* operacao) {
+    if (status != cudaSuccess) {
+        throw std::runtime_error(std::string(operacao) + ": " + cudaGetErrorString(status));
     }
 }
 
 void blelloch_scan(int* array, int n) {
-    int* d_array;
-    cudaMalloc(&d_array, n * sizeof(int));
-    cudaMemcpy(d_array, array, n * sizeof(int), cudaMemcpyHostToDevice);
+    if (n <= 0) return;
 
-    int passo = 1;
-    while (passo < n) {
-        int numThreads = (n / (passo * 2) + 255) / 256;
-        up_sweep<<<numThreads, 256>>>(d_array, n, passo);
-        passo *= 2;
-        cudaDeviceSynchronize();
+    int tamanhoArvore = static_cast<int>(std::bit_ceil(static_cast<unsigned>(n)));
+    int* d_array = nullptr;
+    verificarCuda(cudaMalloc(&d_array, tamanhoArvore * sizeof(int)), "alocar vetor CUDA");
+    std::unique_ptr<int, decltype(&cudaFree)> buffer(d_array, cudaFree);
+    verificarCuda(cudaMemset(d_array, 0, tamanhoArvore * sizeof(int)), "inicializar vetor CUDA");
+    verificarCuda(cudaMemcpy(d_array, array, n * sizeof(int), cudaMemcpyHostToDevice), "enviar vetor");
+
+    constexpr int threads = 256;
+    for (int passo = 1; passo < tamanhoArvore; passo *= 2) {
+        int pares = tamanhoArvore / (passo * 2);
+        int blocos = (pares + threads - 1) / threads;
+        up_sweep<<<blocos, threads>>>(d_array, tamanhoArvore, passo);
+        verificarCuda(cudaGetLastError(), "lançar up-sweep");
     }
 
-    cudaMemset(&d_array[n - 1], 0, sizeof(int)); // Reset para down-sweep
+    verificarCuda(cudaMemset(&d_array[tamanhoArvore - 1], 0, sizeof(int)), "zerar raiz da árvore");
 
-    passo /= 2;
-    while (passo > 0) {
-        int numThreads = (n / (passo * 2) + 255) / 256;
-        down_sweep<<<numThreads, 256>>>(d_array, n, passo);
-        passo /= 2;
-        cudaDeviceSynchronize();
+    for (int passo = tamanhoArvore / 2; passo > 0; passo /= 2) {
+        int pares = tamanhoArvore / (passo * 2);
+        int blocos = (pares + threads - 1) / threads;
+        down_sweep<<<blocos, threads>>>(d_array, tamanhoArvore, passo);
+        verificarCuda(cudaGetLastError(), "lançar down-sweep");
     }
 
-    cudaMemcpy(array, d_array, n * sizeof(int), cudaMemcpyDeviceToHost);
-    cudaFree(d_array);
+    verificarCuda(cudaMemcpy(array, d_array, n * sizeof(int), cudaMemcpyDeviceToHost), "receber prefixos");
 }
 
-int main() {
-    int tamanhos[] = {100, 1000, 10000, 100000, 1000000, 10000000};
+int main() try {
+    const int tamanhos[] = {100, 1000, 10000, 100000, 1000000, 10000000};
 
-    for (int i = 0; i < 6; ++i) {
-        int n = tamanhos[i];
-        int* array = new int[n];
-        for (int j = 0; j < n; ++j) array[j] = 1;
+    for (int n : tamanhos) {
+        std::vector<int> array(n, 1);
 
         auto start = std::chrono::high_resolution_clock::now();
-
-        blelloch_scan(array, n);
-
+        blelloch_scan(array.data(), n);
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
 
-        int soma = array[n - 1];
-        int passos = log2(n) * 2;  // Estimativa para o número total de passos
-
+        int passos = 2 * std::bit_width(static_cast<unsigned>(n - 1));
         std::cout << "Tamanho do array: " << n
                   << " | Tempo (Blelloch): " << diff.count() << " segundos"
-                  << " | Trabalho: " << soma
+                  << " | Último prefixo: " << array.back()
                   << " | Passos: " << passos << std::endl;
-
-        delete[] array;
     }
     return 0;
+} catch (const std::exception& erro) {
+    std::cerr << erro.what() << std::endl;
+    return 1;
 }
